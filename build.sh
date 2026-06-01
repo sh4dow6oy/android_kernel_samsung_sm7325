@@ -43,9 +43,9 @@ export ANDROID_BUILD_TOP="$BASE_DIR"
 # Calea către binarele compilatorului
 NDK_BIN="$TOOLCHAIN_DIR/bin"
 
-# PĂCĂLIRE MAKEFILE OEM: Setăm tripletele în toate formele posibile cerute de scripturile Samsung
-export CLANG_TRIPLE=aarch64-linux-android-
-export CLANG_TARGET=aarch64-linux-android-
+# PĂCĂLIRE SUPREMĂ MAKEFILE: Folosim tripletul generic gnu- pentru a trece de validarea restrictivă Samsung.
+# Clang-ul din NDK r29 știe să îl mapeze intern automat către arhitectura corectă.
+export CLANG_TRIPLE=aarch64-linux-gnu-
 export CROSS_COMPILE="$NDK_BIN/aarch64-linux-android-"
 export CROSS_COMPILE_ARM32="$NDK_BIN/arm-linux-androideabi-"
 
@@ -60,7 +60,7 @@ ln -sf "$NDK_BIN/ld.lld" "$BASE_DIR/tools/bin-links/ld"
 # Adăugăm în PATH ambele directoare pentru siguranță absolută
 export PATH="$BASE_DIR/tools/bin-links:$NDK_BIN:$PATH"
 
-# 5. Definire argumente pentru Make (Fără CLANG_TRIPLE ca argument simplu, îl injectăm direct)
+# 5. Definire argumente pentru Make
 MAKE_ARGS=(
     -j$(nproc --all) \
     O=out \
@@ -69,6 +69,7 @@ MAKE_ARGS=(
     LLVM=1 \
     LLVM_IAS=1 \
     CC="$NDK_BIN/clang" \
+    CLANG_TRIPLE="aarch64-linux-gnu-" \
     CROSS_COMPILE="$CROSS_COMPILE" \
     CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
     LD="$NDK_BIN/ld.lld" \
@@ -88,22 +89,19 @@ git config --local user.email "action@github.com"
 git checkout -b temp-branch 2>/dev/null || git checkout temp-branch
 git tag -a f35368d83 -m "Fix target revision for qcacld" 2>/dev/null || true
 
-# Asigurăm existența folderului de ieșire
+# Asigurăm existența folderului de ieșire curat
 mkdir -p out
-
-# TACTICA SUPREMĂ: Injectăm variabilele de mediu direct în prefixul execuției binare a 'make'
-# Astfel, sub-make-ul generat în 'out/' este forțat să le moștenească nativ.
 
 # Pasul 1: Generarea fișierului .config
 echo "=== Pasul 1: Generare configurație ==="
-env CLANG_TRIPLE=aarch64-linux-android- CLANG_TARGET=aarch64-linux-android- make "${MAKE_ARGS[@]}" sm8150_sec_r5q_eur_open_defconfig
+make "${MAKE_ARGS[@]}" CLANG_TRIPLE=aarch64-linux-gnu- sm8150_sec_r5q_eur_open_defconfig
 
 # Pasul 2: Sincronizarea regulilor de Kconfig
 echo "=== Pasul 2: Sincronizare și fixare Kconfig ==="
-env CLANG_TRIPLE=aarch64-linux-android- CLANG_TARGET=aarch64-linux-android- make "${MAKE_ARGS[@]}" olddefconfig
+make "${MAKE_ARGS[@]}" CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
 
 # Pasul 3: Compilarea imaginii finale
 echo "=== Pasul 3: Compilare Kernel (Image.gz-dtb) ==="
-env CLANG_TRIPLE=aarch64-linux-android- CLANG_TARGET=aarch64-linux-android- make "${MAKE_ARGS[@]}" Image.gz-dtb
+make "${MAKE_ARGS[@]}" CLANG_TRIPLE=aarch64-linux-gnu- Image.gz-dtb
 
 echo "=== 🎉 Compilare finalizată cu succes! Fișierele sunt în out/arch/arm64/boot/ ==="
