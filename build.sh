@@ -14,7 +14,6 @@ if [ ! -f "$TOOLCHAIN_DIR/bin/clang" ]; then
     wget -q --show-progress -O llvm.tar.zst https://github.com/Ylarod/setup-ndk-clang/releases/download/prebuilt/clang-linux-x86-ndk-r29-r563880c.tar.zst
     
     echo "=== Extragere Toolchain ==="
-    # Extragem temporar pentru a vedea exact structura folderului
     mkdir -p tmp_extract
     tar -I zstd -xf llvm.tar.zst -C tmp_extract/
     
@@ -55,7 +54,7 @@ for tool in ar nm objcopy objdump strip ld.lld; do
 done
 ln -sf "$NDK_BIN/ld.lld" "$BASE_DIR/tools/bin-links/ld"
 
-# Adăugăm în PATH
+# Adăugăm în PATH ambele directoare pentru siguranță absolută
 export PATH="$BASE_DIR/tools/bin-links:$NDK_BIN:$PATH"
 
 # 5. Definire argumente pentru Make (Folosind căile absolute verificate)
@@ -87,19 +86,19 @@ git config --local user.email "action@github.com"
 git checkout -b temp-branch 2>/dev/null || git checkout temp-branch
 git tag -a f35368d83 -m "Fix target revision for qcacld" 2>/dev/null || true
 
-# Curățăm folderul out dacă existau reziduuri de la build-uri eșuate
+# Asigurăm existența folderului de ieșire
 mkdir -p out
 
-# Pasul 1: Generarea fișierului .config
+# Pasul 1: Generarea fișierului .config (Forțăm tripletele ca inline argument)
 echo "=== Pasul 1: Generare configurație ==="
-make "${MAKE_ARGS[@]}" sm8150_sec_r5q_eur_open_defconfig
+make "${MAKE_ARGS[@]}" CLANG_TRIPLE=aarch64-linux-android- CLANG_TARGET=aarch64-linux-android- sm8150_sec_r5q_eur_open_defconfig
 
 # Pasul 2: Sincronizarea regulilor de Kconfig
 echo "=== Pasul 2: Sincronizare și fixare Kconfig ==="
-make "${MAKE_ARGS[@]}" olddefconfig
+make "${MAKE_ARGS[@]}" CLANG_TRIPLE=aarch64-linux-android- CLANG_TARGET=aarch64-linux-android- olddefconfig
 
 # Pasul 3: Compilarea imaginii finale
 echo "=== Pasul 3: Compilare Kernel (Image.gz-dtb) ==="
-make "${MAKE_ARGS[@]}" Image.gz-dtb
+make "${MAKE_ARGS[@]}" CLANG_TRIPLE=aarch64-linux-android- CLANG_TARGET=aarch64-linux-android- Image.gz-dtb
 
-echo "=== 🎉 Compilare finalizată cu succes! ==="
+echo "=== 🎉 Compilare finalizată cu succes! Fișierele sunt în out/arch/arm64/boot/ ==="
