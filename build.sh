@@ -17,7 +17,7 @@ if [ ! -f "$TOOLCHAIN_DIR/bin/clang" ]; then
     mkdir -p tmp_extract
     tar -I zstd -xf llvm.tar.zst -C tmp_extract/
     
-    # Mutăm conținutul corect în folderul final (rezolvă problema structurii de directoare imbricate)
+    # Mutăm conținutul corect în folderul final
     if [ -d tmp_extract/bin ]; then
         mv tmp_extract/* "$TOOLCHAIN_DIR/"
     else
@@ -34,15 +34,18 @@ if [ ! -f "$TOOLCHAIN_DIR/bin/clang" ]; then
 fi
 
 # 3. Setări mediu globale explicite (Căi Absolute)
-export ANDROID_BUILD_TOP="$BASE_DIR"
 export ARCH=arm64
 export SUBARCH=arm64
 export DTC_EXT="$BASE_DIR/tools/dtc"
 export CONFIG_BUILD_ARM64_DT_OVERLAY=y
+export ANDROID_BUILD_TOP="$BASE_DIR"
 
 # Calea către binarele compilatorului
 NDK_BIN="$TOOLCHAIN_DIR/bin"
+
+# PĂCĂLIRE MAKEFILE OEM: Setăm tripletele în toate formele posibile cerute de scripturile Samsung
 export CLANG_TRIPLE=aarch64-linux-android-
+export CLANG_TARGET=aarch64-linux-android-
 export CROSS_COMPILE="$NDK_BIN/aarch64-linux-android-"
 export CROSS_COMPILE_ARM32="$NDK_BIN/arm-linux-androideabi-"
 
@@ -57,7 +60,7 @@ ln -sf "$NDK_BIN/ld.lld" "$BASE_DIR/tools/bin-links/ld"
 # Adăugăm în PATH ambele directoare pentru siguranță absolută
 export PATH="$BASE_DIR/tools/bin-links:$NDK_BIN:$PATH"
 
-# 5. Definire argumente pentru Make (Folosind căile absolute verificate)
+# 5. Definire argumente pentru Make (Fără CLANG_TRIPLE ca argument simplu, îl injectăm direct)
 MAKE_ARGS=(
     -j$(nproc --all) \
     O=out \
@@ -66,7 +69,6 @@ MAKE_ARGS=(
     LLVM=1 \
     LLVM_IAS=1 \
     CC="$NDK_BIN/clang" \
-    CLANG_TRIPLE="$CLANG_TRIPLE" \
     CROSS_COMPILE="$CROSS_COMPILE" \
     CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
     LD="$NDK_BIN/ld.lld" \
@@ -89,16 +91,19 @@ git tag -a f35368d83 -m "Fix target revision for qcacld" 2>/dev/null || true
 # Asigurăm existența folderului de ieșire
 mkdir -p out
 
-# Pasul 1: Generarea fișierului .config (Forțăm tripletele ca inline argument)
+# TACTICA SUPREMĂ: Injectăm variabilele de mediu direct în prefixul execuției binare a 'make'
+# Astfel, sub-make-ul generat în 'out/' este forțat să le moștenească nativ.
+
+# Pasul 1: Generarea fișierului .config
 echo "=== Pasul 1: Generare configurație ==="
-make "${MAKE_ARGS[@]}" CLANG_TRIPLE=aarch64-linux-android- CLANG_TARGET=aarch64-linux-android- sm8150_sec_r5q_eur_open_defconfig
+env CLANG_TRIPLE=aarch64-linux-android- CLANG_TARGET=aarch64-linux-android- make "${MAKE_ARGS[@]}" sm8150_sec_r5q_eur_open_defconfig
 
 # Pasul 2: Sincronizarea regulilor de Kconfig
 echo "=== Pasul 2: Sincronizare și fixare Kconfig ==="
-make "${MAKE_ARGS[@]}" CLANG_TRIPLE=aarch64-linux-android- CLANG_TARGET=aarch64-linux-android- olddefconfig
+env CLANG_TRIPLE=aarch64-linux-android- CLANG_TARGET=aarch64-linux-android- make "${MAKE_ARGS[@]}" olddefconfig
 
 # Pasul 3: Compilarea imaginii finale
 echo "=== Pasul 3: Compilare Kernel (Image.gz-dtb) ==="
-make "${MAKE_ARGS[@]}" CLANG_TRIPLE=aarch64-linux-android- CLANG_TARGET=aarch64-linux-android- Image.gz-dtb
+env CLANG_TRIPLE=aarch64-linux-android- CLANG_TARGET=aarch64-linux-android- make "${MAKE_ARGS[@]}" Image.gz-dtb
 
 echo "=== 🎉 Compilare finalizată cu succes! Fișierele sunt în out/arch/arm64/boot/ ==="
