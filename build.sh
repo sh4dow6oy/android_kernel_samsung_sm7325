@@ -1,112 +1,91 @@
 #!/bin/bash
 
-# 1. Import Proton Clang (Toolchain LLVM modern și complet)
-git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain/proton-clang
-# Setting 
-export ANDROID_BUILD_TOP=$(pwd)
+# Oprim scriptul la prima eroare întâmpinată
+set -e
 
-# OEM & Architecture Setting
+# 1. Descărcare și extragere Toolchain LLVM NDK r29
+mkdir -p toolchain/ndk-clang
+if [ ! -f "toolchain/ndk-clang/bin/clang" ]; then
+    echo "=== Descărcare NDK Clang r29 ==="
+    wget -O llvm.tar.zst https://github.com/Ylarod/setup-ndk-clang/releases/download/prebuilt/clang-linux-x86-ndk-r29-r563880c.tar.zst
+    
+    echo "=== Extragere Toolchain (necesită pachetul zstd) ==="
+    # Extrage direct în folderul țintă
+    tar -I zstd -xf llvm.tar.zst -C toolchain/ndk-clang --strip-components=1
+    rm llvm.tar.zst
+fi
+
+# Setări mediu globale
+export ANDROID_BUILD_TOP=$(pwd)
 export ARCH=arm64
 export SUBARCH=arm64
 
-# Definirea căilor către Proton Clang
-PROTON_BIN=$(pwd)/toolchain/proton-clang/bin
-# Setăm compilatorul principal (Clang) din Proton
-KERNEL_LLVM_BIN=$PROTON_BIN/clang
-BUILD_CROSS_COMPILE=$PROTON_BIN/aarch64-linux-gnu-
-BUILD_CROSS_COMPILE_ARM32=$PROTON_BIN/arm-linux-gnueabi-
-CLANG_TRIPLE=aarch64-linux-gnu-
+# Definirea căilor către NDK Clang
+NDK_BIN=$(pwd)/toolchain/ndk-clang/bin
+CLANG_TRIPLE=aarch64-linux-android-
 
 # Setări mediu pentru Device Tree / Overlays
 export DTC_EXT=$(pwd)/tools/dtc
 export CONFIG_BUILD_ARM64_DT_OVERLAY=y
-# Cooking Kernel Source
+
+# Folderul de ieșire
 mkdir -p out
-# Setări globale de mediu pentru ca LLVM să fie recunoscut nativ în sursele Qualcomm/Samsung
-export LLVM=1
-export LLVM_IAS=1
 
-# TACTICA SALVATOARE: Creăm un folder local de legături (symlinks) și îl punem în PATH.
+# TACTICA SALVATOARE: Creăm folderul local de legături (symlinks)
+# NDK Clang folosește prefixul 'llvm-' pentru utilitare
 mkdir -p $(pwd)/tools/bin-links
+for tool in ar nm objcopy objdump strip ld.lld; do
+    ln -sf "$NDK_BIN/llvm-$tool" "$(pwd)/tools/bin-links/llvm-$tool"
+    # Adăugăm link-uri și fără prefixul 'llvm-' pentru scripturile OEM încăpățânate
+    ln -sf "$NDK_BIN/llvm-$tool" "$(pwd)/tools/bin-links/$tool"
+done
 
-ln -sf $PROTON_BIN/llvm-ar $(pwd)/tools/bin-links/llvm-ar
-ln -sf $PROTON_BIN/llvm-nm $(pwd)/tools/bin-links/llvm-nm
-ln -sf $PROTON_BIN/llvm-objcopy $(pwd)/tools/bin-links/llvm-objcopy
-ln -sf $PROTON_BIN/llvm-objdump $(pwd)/tools/bin-links/llvm-objdump
-ln -sf $PROTON_BIN/llvm-strip $(pwd)/tools/bin-links/llvm-strip
+# Mapare fallback pentru ld (linker)
+ln -sf "$NDK_BIN/ld.lld" "$(pwd)/tools/bin-links/ld"
 
-export PATH="$(pwd)/tools/bin-links:$PATH"
+# Adăugăm folderul de link-uri și folderul NDK în PATH
+export PATH="$(pwd)/tools/bin-links:$NDK_BIN:$PATH"
 
-
-
+# Deficire argumente pentru Make (Full LLVM Setup)
 MAKE_ARGS=(
-
     -j$(nproc --all) \
-
+    O=out \
     ARCH=arm64 \
-
-    CROSS_COMPILE="$BUILD_CROSS_COMPILE" \
-
-    CROSS_COMPILE_ARM32="$BUILD_CROSS_COMPILE_ARM32" \
-
-    CC="$KERNEL_LLVM_BIN" \
-
+    SUBARCH=arm64 \
+    LLVM=1 \
+    LLVM_IAS=1 \
+    CC="$NDK_BIN/clang" \
     CLANG_TRIPLE="$CLANG_TRIPLE" \
-
-    LD="$PROTON_BIN/ld.lld" \
-
-    AR="$PROTON_BIN/llvm-ar" \
-
-    NM="$PROTON_BIN/llvm-nm" \
-
-    OBJCOPY="$PROTON_BIN/llvm-objcopy" \
-
-    OBJDUMP="$PROTON_BIN/llvm-objdump" \
-
-    STRIP="$PROTON_BIN/llvm-strip" \
-
+    CROSS_COMPILE="$NDK_BIN/aarch64-linux-android-" \
+    CROSS_COMPILE_ARM32="$NDK_BIN/arm-linux-androideabi-" \
+    LD="$NDK_BIN/ld.lld" \
+    AR="$NDK_BIN/llvm-ar" \
+    NM="$NDK_BIN/llvm-nm" \
+    OBJCOPY="$NDK_BIN/llvm-objcopy" \
+    OBJDUMP="$NDK_BIN/llvm-objdump" \
+    STRIP="$NDK_BIN/llvm-strip" \
     HOSTCC=gcc \
-
-    HOSTCXX=g++ \
-
-    O=out
-
+    HOSTCXX=g++
 )
 
-
-
 # Fix pentru erorile fatale de Git "ambiguous argument" din driverul Wi-Fi Qualcomm (qcacld-3.0)
-
 echo "=== Configurare și păcălire Git pentru driverul Wi-Fi ==="
+git config --local user.name "GitHub Action"
+git config --local user.email "action@github.com"
 
-git config --global user.name "GitHub Action"
-
-git config --global user.email "action@github.com"
-
-git checkout -b temp-branch 2>/dev/null || true
-
+git checkout -b temp-branch 2>/dev/null || git checkout temp-branch
 git tag -a f35368d83 -m "Fix target revision for qcacld" 2>/dev/null || true
 
-
-
-# Pasul 1: Generarea fișierului .config folosind configurația ta curată pentru R5Q
-
+# Pasul 1: Generarea fișierului .config folosind configurația pentru R5Q
 echo "=== Pasul 1: Generare configurație exclusivă sm8150_sec_r5q_eur_open_defconfig ==="
+make "${MAKE_ARGS[@]}" sm8150_sec_r5q_eur_open_defconfig
 
-make "${MAKE_ARGS[@]}" sm8150_sec_r5q_eur_open_defconfig || exit 1
-
-
-
-# Pasul 2: Sincronizarea regulilor de Kconfig în siguranță (fără merge_config)
-
+# Pasul 2: Sincronizarea regulilor de Kconfig în siguranță
 echo "=== Pasul 2: Sincronizare și fixare Kconfig ==="
-
-make "${MAKE_ARGS[@]}" olddefconfig || exit 1
-
-
+make "${MAKE_ARGS[@]}" olddefconfig
 
 # Pasul 3: Compilarea imaginii finale
-
 echo "=== Pasul 3: Compilare Kernel (Image.gz-dtb) ==="
+make "${MAKE_ARGS[@]}" Image.gz-dtb
 
-make "${MAKE_ARGS[@]}" Image.gz-dtb || exit 1
+echo "=== 🎉 Compilare finalizată cu succes! Verifică folderul out/arch/arm64/boot/ ==="
