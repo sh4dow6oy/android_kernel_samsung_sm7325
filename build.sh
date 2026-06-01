@@ -94,18 +94,37 @@ git tag -a f35368d83 -m "Fix target revision for qcacld" 2>/dev/null || true
 # 🛠️ APLICARE PATCH-URI AUTOMATE PENTRU CODUL SURSĂ
 # =====================================================================
 
-# Fix 1: Eroarea Energy Aware Scheduling din scheduler
-echo "=== Aplicare patch pentru kernel/sched/fair.c ==="
-if [ -f kernel/sched/fair.c ]; then
-    sed -i 's/static_branch_unlikely(\&sched_energy_present)/sched_energy_enabled()/g' kernel/sched/fair.c
+# Fix 2: Rezolvare definitivă prin înlocuire macro structural în PCA9468 Charger
+echo "=== Aplicare patch structural radical pentru pca9468_charger.c ==="
+if [ -f drivers/battery/charger/pca9468_charger/pca9468_charger.c ]; then
+    # 1. Forțăm includerea directă a header-elor I2C și Module la începutul fișierului pentru a defini corect structurile
+    sed -i '1s/^/#include <linux\/i2c.h>\n#include <linux\/module.h>\n#include <linux\/init.h>\n/' drivers/battery/charger/pca9468_charger/pca9468_charger.c
+
+    # 2. Ștergem linia problematică module_i2c_driver(pca9468_charger_driver);
+    sed -i '/module_i2c_driver(pca9468_charger_driver);/d' drivers/battery/charger/pca9468_charger/pca9468_charger.c
+
+    # 3. Adăugăm manual codul standard de inițializare a driverului la sfârșitul fișierului.
+    # Aceasta este exact ceea ce macro-ul expandat ar fi trebuit să genereze în mod normal.
+    cat << 'EOF' >> drivers/battery/charger/pca9468_charger/pca9468_charger.c
+
+static int __init pca9468_charger_init(void)
+{
+	return i2c_add_driver(&pca9468_charger_driver);
+}
+module_init(pca9468_charger_init);
+
+static void __exit pca9468_charger_exit(void)
+{
+	i2c_del_driver(&pca9468_charger_driver);
+}
+module_exit(pca9468_charger_exit);
+EOF
 fi
 
-# Fix 2: Tăierea în carne vie a erorilor din driverul de baterie PCA9468
-echo "=== Dezactivare erori fatale (-Werror) în PCA9468 Charger ==="
+# Păstrăm și scutul de protecție la warnings pentru orice eventualitate în folder
 if [ -f drivers/battery/charger/pca9468_charger/Makefile ]; then
-    # Forțăm ignorarea oricărui tip de eroare de compilare în acest folder
-    echo "ccflags-y += -Wno-error -Wno-implicit-int -Wno-implicit-function-declaration" >> drivers/battery/charger/pca9468_charger/Makefile
-    echo "subdir-ccflags-y += -Wno-error -Wno-implicit-int -Wno-implicit-function-declaration" >> drivers/battery/charger/pca9468_charger/Makefile
+    echo "ccflags-y += -Wno-error" >> drivers/battery/charger/pca9468_charger/Makefile
+    echo "subdir-ccflags-y += -Wno-error" >> drivers/battery/charger/pca9468_charger/Makefile
 fi
 
 # Fix 3: Eroarea pci_request_region în Qualcomm IPA Driver
