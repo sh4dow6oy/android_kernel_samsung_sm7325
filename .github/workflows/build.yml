@@ -1,0 +1,98 @@
+name: Samsung SM8150 r5q Kernel Build
+
+on:
+  workflow_dispatch: 
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: "Set up build environment"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential bc bison flex libssl-dev make libncurses5-dev git curl clang lld \
+            libelf-dev erofs-utils android-sdk-libsparse-utils automake autoconf libtool pkg-config fuse3 e2fsprogs pv liblz4-dev uuid-dev \
+            libfuse3-dev f2fs-tools fuse2fs attr zlib1g-dev rsync \
+            device-tree-compiler lz4 xz-utils openjdk-17-jdk gcc g++ python3 python-is-python3 p7zip-full \
+            cpio zip unzip kmod tar openssl python3-pip
+
+          wget http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb && sudo dpkg -i libtinfo5_6.3-2ubuntu0.1_amd64.deb             
+
+      - name: "Import kernel source"
+        uses: actions/checkout@v4    
+
+      - name: "Setting permission"
+        run: chmod +x build.sh
+
+      - name: "Build for specific device"
+        run: ./build.sh
+
+      - name: "Generate DTBO Image"
+        run: |
+          # Găsim utilitarul mkdtimg în repository
+          MKDTIMG=$(find . -name "mkdtimg" -not -path "*/.*" | head -n 1)
+          
+          if [ -z "$MKDTIMG" ]; then
+            echo "EROARE: Nu s-a găsit utilitarul mkdtimg în repository!"
+            exit 1
+          fi
+          
+          chmod +x "$MKDTIMG"
+          
+          # Căutăm fișierele .dtbo EXACT în folderul samsung/renovation/ indicat de log-ul tău
+          DTBO_FILES=$(find . -path "*/arch/arm64/boot/dts/samsung/renovation/*.dtbo")
+          
+          if [ -n "$DTBO_FILES" ]; then
+            # Găsim automat folderul boot din arhitectură unde trebuie pus dtbo.img final
+            DTBO_OUT=$(find . -type d -path "*/arch/arm64/boot" | head -n 1)
+            
+            echo "Fișierele DTBO corecte găsite pentru r5q:"
+            echo "$DTBO_FILES"
+            
+            # Creăm imaginea dtbo.img combinându-le doar pe acestea
+            $MKDTIMG create "$DTBO_OUT/dtbo.img" $DTBO_FILES
+            echo "dtbo.img a fost creat cu succes în $DTBO_OUT/dtbo.img!"
+          else
+            echo "EROARE: Nu s-au găsit fișiere .dtbo în folderul samsung/renovation/. Asigură-te că compilarea s-a terminat cu succes!"
+            exit 1
+          fi
+
+      - name: "Package with AnyKernel3"
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3.git AnyKernel
+          rm -rf AnyKernel/.git
+          
+          # CORECTAT: Căutăm dinamic fișierul cu numele corect (Image.gz-dtb)
+          NEW_IMAGE=$(find . -name "Image.gz-dtb" -path "*/arch/arm64/boot/Image.gz-dtb" | head -n 1)
+          FINAL_DTBO=$(find . -name "dtbo.img" -not -path "./prebuilt/*" | head -n 1)
+          
+          if [ -z "$NEW_IMAGE" ] || [ -z "$FINAL_DTBO" ]; then
+            echo "EROARE CRITICĂ: Lipsește fișierul Image sau dtbo.img!"
+            exit 1
+          fi
+          
+          # Copiem binarul în AnyKernel cu numele pe care AnyKernel3 îl recunoaște de obicei
+          cp "$NEW_IMAGE" AnyKernel/Image.gz-dtb
+          cp "$FINAL_DTBO" AnyKernel/dtbo.img
+          
+          # Creăm folderul pentru module și copiem toate fișierele .ko
+          mkdir -p AnyKernel/modules
+          find . -name "*.ko" -not -path "./AnyKernel/*" -exec cp {} AnyKernel/modules/ \;
+          
+          # Dezactivăm verificarea strictă de dispozitiv ca să nu dea erori în TWRP
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' AnyKernel/anykernel.sh
+          
+          # Împachetăm totul în ZIP-ul final flash-abil
+          cd AnyKernel
+          zip -r9 ../Kernel-r5q-AnyKernel-Flashable.zip *
+          cd ..
+
+      - name: "Upload Flashable Artifacts"
+        uses: actions/upload-artifact@v4
+        with:
+          name: Samsung-SM8150-Final-Kernel
+          path: |
+            Kernel-r5q-AnyKernel-Flashable.zip
+            **/arch/arm64/boot/dtbo.img
