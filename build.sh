@@ -89,6 +89,26 @@ git config --local user.email "action@github.com"
 git checkout -b temp-branch 2>/dev/null || git checkout temp-branch
 git tag -a f35368d83 -m "Fix target revision for qcacld" 2>/dev/null || true
 
+# 🛠️ REPARARE FIȘIER 1: Fix pentru eroarea Energy Aware Scheduling din scheduler
+echo "=== Aplicare patch pentru kernel/sched/fair.c ==="
+sed -i 's/static_branch_unlikely(\&sched_energy_present)/sched_energy_enabled()/g' kernel/sched/fair.c
+
+# =====================================================================
+# 🛠️ REPARARE FIȘIER 2: Fix pentru module_i2c_driver în PCA9468 Charger
+# =====================================================================
+echo "=== Aplicare patch pentru pca9468_charger.c ==="
+# Adăugăm header-ul <linux/i2c.h> la începutul fișierului pentru a expune macro-ul module_i2c_driver
+sed -i '1s/^/#include <linux\/i2c.h>\n/' drivers/battery/charger/pca9468_charger/pca9468_charger.c
+
+# =====================================================================
+# 🛠️ REPARARE FIȘIER 3: Fix pentru pci_request_region în Qualcomm IPA Driver
+# =====================================================================
+echo "=== Aplicare patch pentru techpack IPA Driver ==="
+# Mapăm funcțiile legacy single-region către variantele moderne compatibile multi-region acceptate de kernel
+if [ -f techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/ipa.c ]; then
+sed -i '1s/^/#define pci_request_region(pdev, bar, res_name) pci_request_regions(pdev, res_name)\n/' techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/ipa.c
+sed -i '1s/^/#define pci_release_region(pdev, bar) pci_release_regions(pdev)\n/' techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/ipa.c
+
 # Asigurăm existența folderului de ieșire curat
 mkdir -p out
 
