@@ -135,6 +135,13 @@ if [ -f techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/ipa.c ]; then
     sed -i '1s/^/#define pci_release_region(pdev, bar) pci_release_regions(pdev)\n/' techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/ipa.c
 fi
 
+# Fix 4: Rezolvare conflicte macro-uri de proiect în driverul Hall IC (r5q vs A73)
+echo "=== Aplicare patch pentru drivers/input/misc/hall/hall_ic.c ==="
+if [ -f drivers/input/misc/hall/hall_ic.c ]; then
+    # Injectăm definirea macro-ului de A73 dacă suntem pe proiectul R5Q, doar în interiorul acestui driver, 
+    # pentru a expune variabilele globale gddata, sec_dev și SECLOG necesare compilării.
+    sed -i '1s/^/#ifdef CONFIG_SEC_R5Q_PROJECT\n#define CONFIG_SEC_A73XQ_PROJECT\n#define SECLOG "[HALL]"\n#endif\n/' drivers/input/misc/hall/hall_ic.c
+fi
 
 # =====================================================================
 # 🚀 PORNIRE COMPILARE KERNEL
