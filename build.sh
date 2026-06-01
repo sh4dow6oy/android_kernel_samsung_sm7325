@@ -106,15 +106,16 @@ sed -i '1s/^/#include <linux\/i2c.h>\n/' drivers/battery/charger/pca9468_charger
 echo "=== Aplicare patch pentru techpack IPA Driver ==="
 # Mapăm funcțiile legacy single-region către variantele moderne compatibile multi-region acceptate de kernel
 if [ -f techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/ipa.c ]; then
-sed -i '1s/^/#define pci_request_region(pdev, bar, res_name) pci_request_regions(pdev, res_name)\n/' techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/ipa.c
-sed -i '1s/^/#define pci_release_region(pdev, bar) pci_release_regions(pdev)\n/' techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/ipa.c
+    sed -i '1s/^/#define pci_request_region(pdev, bar, res_name) pci_request_regions(pdev, res_name)\n/' techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/ipa.c
+    sed -i '1s/^/#define pci_release_region(pdev, bar) pci_release_regions(pdev)\n/' techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/ipa.c
+fi
 
 # Asigurăm existența folderului de ieșire curat
 mkdir -p out
 
-# Pasul 1: Generarea fișierului .config
+# Pasul 1: Generarea fișierului .config folosind noul defconfig pentru r5q
 echo "=== Pasul 1: Generare configurație ==="
-make "${MAKE_ARGS[@]}" CLANG_TRIPLE=aarch64-linux-gnu- sm8150_sec_r5q_eur_open_defconfig
+make "${MAKE_ARGS[@]}" CLANG_TRIPLE=aarch64-linux-gnu- lineage-r5q_defconfig
 
 # Pasul 2: Sincronizarea regulilor de Kconfig
 echo "=== Pasul 2: Sincronizare și fixare Kconfig ==="
