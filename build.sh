@@ -97,15 +97,16 @@ git tag -a f35368d83 -m "Fix target revision for qcacld" 2>/dev/null || true
 # Fix 2: Rezolvare definitivă prin înlocuire macro structural în PCA9468 Charger
 echo "=== Aplicare patch structural radical pentru pca9468_charger.c ==="
 if [ -f drivers/battery/charger/pca9468_charger/pca9468_charger.c ]; then
-    # 1. Forțăm includerea directă a header-elor I2C și Module la începutul fișierului pentru a defini corect structurile
-    sed -i '1s/^/#include <linux\/i2c.h>\n#include <linux\/module.h>\n#include <linux\/init.h>\n/' drivers/battery/charger/pca9468_charger/pca9468_charger.c
-
-    # 2. Ștergem linia problematică module_i2c_driver(pca9468_charger_driver);
+    # 1. Ștergem linia problematică module_i2c_driver(pca9468_charger_driver);
     sed -i '/module_i2c_driver(pca9468_charger_driver);/d' drivers/battery/charger/pca9468_charger/pca9468_charger.c
 
-    # 3. Adăugăm manual codul standard de inițializare a driverului la sfârșitul fișierului.
-    # Aceasta este exact ceea ce macro-ul expandat ar fi trebuit să genereze în mod normal.
+    # 2. Adăugăm manual headerele ȘI codul de inițializare direct la sfârșitul fișierului.
+    # Plasate la final, headerele nu mai pot fi suprascrise de alte include-uri interne!
     cat << 'EOF' >> drivers/battery/charger/pca9468_charger/pca9468_charger.c
+
+#include <linux/i2c.h>
+#include <linux/module.h>
+#include <linux/init.h>
 
 static int __init pca9468_charger_init(void)
 {
@@ -121,10 +122,10 @@ module_exit(pca9468_charger_exit);
 EOF
 fi
 
-# Păstrăm și scutul de protecție la warnings pentru orice eventualitate în folder
+# Scutul de protecție la warnings pentru orice eventualitate în folder
 if [ -f drivers/battery/charger/pca9468_charger/Makefile ]; then
-    echo "ccflags-y += -Wno-error" >> drivers/battery/charger/pca9468_charger/Makefile
-    echo "subdir-ccflags-y += -Wno-error" >> drivers/battery/charger/pca9468_charger/Makefile
+    echo "ccflags-y += -Wno-error -Wno-implicit-function-declaration" >> drivers/battery/charger/pca9468_charger/Makefile
+    echo "subdir-ccflags-y += -Wno-error -Wno-implicit-function-declaration" >> drivers/battery/charger/pca9468_charger/Makefile
 fi
 
 # Fix 3: Eroarea pci_request_region în Qualcomm IPA Driver
